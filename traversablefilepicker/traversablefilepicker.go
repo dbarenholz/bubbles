@@ -311,6 +311,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 	case tea.KeyPressMsg:
+		if key.Matches(msg, m.KeyMap.Select) {
+			// Clear stale selection; this keypress must set m.Path in this frame to count as a selection.
+			m.Path = ""
+		}
 		switch {
 		case key.Matches(msg, m.KeyMap.GoToTop):
 			histEntry.selected = 0
@@ -586,7 +590,7 @@ func (m Model) didSelectFile(msg tea.Msg) (bool, string) {
 		isDir = isDir || info.IsDir()
 	}
 
-	if (!isDir && m.FileAllowed) || (isDir && m.DirAllowed) && m.Path != "" {
+	if ((!isDir && m.FileAllowed) || (isDir && m.DirAllowed)) && m.Path != "" {
 		return true, m.Path
 	}
 

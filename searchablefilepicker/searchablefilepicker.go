@@ -29,7 +29,7 @@ func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		// Open the search by pressing "/"
 		FocusSearch:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "open search")),
-		FocusFiles:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "focus files")),
+		FocusFiles:    key.NewBinding(key.WithKeys("enter", "down"), key.WithHelp("enter", "focus files")),
 		DiscardSearch: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "discard search")),
 	}
 }
@@ -111,6 +111,20 @@ func filterFor(query string) func(entry os.DirEntry) bool {
 	}
 }
 
+func highlightedSelectionIsDir(fp *tfp.Model) bool {
+	highlightedPath := fp.HighlightedPath()
+	if highlightedPath == "" {
+		return false
+	}
+
+	info, err := os.Stat(highlightedPath)
+	if err != nil {
+		return false
+	}
+
+	return info.IsDir()
+}
+
 // All the things we need to do when files is focused (initial state)
 func (m Model) updateForFiles(msg tea.Msg) (Model, tea.Cmd) {
 	// if the message is _not_ a key press, delegate it to the filepicker
@@ -127,8 +141,10 @@ func (m Model) updateForFiles(msg tea.Msg) (Model, tea.Cmd) {
 		return m, m.TextInput.Focus()
 	}
 
-	// when discarding search, or on path traversals: reset the filter
-	if key.Matches(keyMsg, m.FilePicker.KeyMap.Open) || key.Matches(keyMsg, m.FilePicker.KeyMap.Back) {
+	// when traversing paths, reset the filter
+	traversingBack := key.Matches(keyMsg, m.FilePicker.KeyMap.Back)
+	traversingIntoDir := key.Matches(keyMsg, m.FilePicker.KeyMap.Open) && highlightedSelectionIsDir(&m.FilePicker)
+	if traversingBack || traversingIntoDir {
 		m.TextInput.SetValue("")
 		m.FilePicker.SetFilterFunc(filterFor(""))
 		fpModel, cmd := m.FilePicker.Update(msg)
@@ -155,6 +171,8 @@ func (m Model) updateForSearch(msg tea.Msg) (Model, tea.Cmd) {
 
 	// if it is a keypress, and specifically the one for FocusFiles, then do that!
 	if key.Matches(keyMsg, m.KeyMap.FocusFiles) {
+		m.Focus = FocusOnFiles
+		m.TextInput.Blur()
 
 		// only one entry, select it
 		if m.FilePicker.NumEntries() == 1 {
@@ -164,8 +182,7 @@ func (m Model) updateForSearch(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// multiple entries, so just switch focus back to files
-		m.Focus = FocusOnFiles
-		m.TextInput.Blur()
+
 		return m, nil
 	}
 
