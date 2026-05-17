@@ -38,7 +38,8 @@ func New(at string) Model {
 		DirAllowed:       false,
 		FileAllowed:      true,
 		AutoHeight:       true,
-		LoopEntries:      false, // while I would like true, I will keep default charm behaviour for now
+		LoopEntries:      false,                                     // while I would like true, I will keep default charm behaviour for now
+		entryFilter:      func(de os.DirEntry) bool { return true }, // by default, keep all files
 		height:           0,
 		history:          newHistory(absolutePath), // uses current directory as parameter
 		KeyMap:           DefaultKeyMap(),
@@ -138,6 +139,23 @@ func newHistory(cwd string) map[string]*historyEntry {
 	return history
 }
 
+func (m *Model) SetFilterFunc(fn func(os.DirEntry) bool) {
+	m.entryFilter = fn
+}
+
+func (m *Model) RefreshEntries() tea.Cmd {
+	return m.readDir(m.currentDirectory, m.ShowHidden)
+}
+
+func (m *Model) NumEntries() int {
+	return len(m.entries)
+}
+
+// CurrentDirectory returns the absolute path of the directory the filepicker is currently showing.
+func (m *Model) CurrentDirectory() string {
+	return m.currentDirectory
+}
+
 // Model represents a file picker.
 type Model struct {
 	id int
@@ -154,12 +172,13 @@ type Model struct {
 
 	KeyMap          KeyMap
 	entries         []os.DirEntry
-	ShowPermissions bool // whether to show file permissions; this does not affect whether files can be selected based on type
-	ShowSize        bool // whether to show file sizes; this does not affect whether files can be selected based on type
-	ShowHidden      bool // whether hidden files should be shown; this does not affect whether hidden files can be selected
-	DirAllowed      bool // whether directories can be selected; if false, only files can be selected
-	FileAllowed     bool // whether files can be selected; if false, only directories can be selected
-	LoopEntries     bool // whether moving up at the top of the list should loop to the bottom, and vice versa
+	entryFilter     func(os.DirEntry) bool // a function for filtering; true == keep
+	ShowPermissions bool                   // whether to show file permissions; this does not affect whether files can be selected based on type
+	ShowSize        bool                   // whether to show file sizes; this does not affect whether files can be selected based on type
+	ShowHidden      bool                   // whether hidden files should be shown; this does not affect whether hidden files can be selected
+	DirAllowed      bool                   // whether directories can be selected; if false, only files can be selected
+	FileAllowed     bool                   // whether files can be selected; if false, only directories can be selected
+	LoopEntries     bool                   // whether moving up at the top of the list should loop to the bottom, and vice versa
 
 	FileSelected string
 
@@ -222,19 +241,25 @@ func (m Model) readDir(path string, showHidden bool) tea.Cmd {
 			return dirEntries[i].IsDir()
 		})
 
-		if showHidden {
-			return readDirMsg{id: m.id, entries: dirEntries}
+		// only keep entries that pass the filter
+		filteredEntries := make([]os.DirEntry, 0, len(dirEntries))
+		sanitizedAndFilteredEntries := make([]os.DirEntry, 0, len(dirEntries))
+
+		for _, entry := range dirEntries {
+			if m.entryFilter(entry) {
+				filteredEntries = append(filteredEntries, entry)
+				isHidden, _ := IsHidden(entry.Name())
+				if !isHidden {
+					sanitizedAndFilteredEntries = append(sanitizedAndFilteredEntries, entry)
+				}
+			}
 		}
 
-		var sanitizedDirEntries []os.DirEntry
-		for _, dirEntry := range dirEntries {
-			isHidden, _ := IsHidden(dirEntry.Name())
-			if isHidden {
-				continue
-			}
-			sanitizedDirEntries = append(sanitizedDirEntries, dirEntry)
+		if showHidden {
+			return readDirMsg{id: m.id, entries: filteredEntries}
 		}
-		return readDirMsg{id: m.id, entries: sanitizedDirEntries}
+
+		return readDirMsg{id: m.id, entries: sanitizedAndFilteredEntries}
 	}
 }
 
