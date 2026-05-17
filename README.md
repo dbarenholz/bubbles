@@ -5,9 +5,14 @@ These have been created due to my need for reusable components in TUIs.
 
 ## TraversableFilepicker
 
-The **TraversableFilepicker** bubble is a file picker that allows the user to navigate through the file system, all the way to `/`.
-All other functionality is equal to the charm [filepicker bubble](https://github.com/charmbracelet/bubbles/tree/main/filepicker).
-This bubble is essentially a slight modification of the charm filepicker, with a change to handling history and the `Back` key.
+The **TraversableFilepicker** bubble is effectively the [charm filepicker bubble](https://github.com/charmbracelet/bubbles/tree/main/filepicker), but with a different API that makes it impossible to get "stuck" in a directory (e.g., you can no longer set `CurrentDirectory` to `.`, preventing `Back` from working).
+Essentially all functionality of the charm filepicker is preserved, but we have following additions:
+
+1. `Home` and `End` keys are now mapped by default to `GoToTop` and `GoToBottom` actions, respectively.
+2. Go to your user home by pressing `~`.
+3. Allow `LoopEntries` to loop the selection when going out of bounds; if you keep holding the down arrow (or `j` for vim enthusiasts), the selection will continuously loop through the entries instead of stopping at the end (if `LoopEntries = true`). Defaults to `false`.
+
+See the [example](./examples/TraversableFilepicker/README.md) for details and a pretty gif.
 
 ## License
 

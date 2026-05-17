@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -83,10 +82,10 @@ func (m model) View() tea.View {
 }
 
 func main() {
-	fp := tfp.New()
+	fp := tfp.New(".") // pass in the directory to start in; don't set fp.CurrentDirectory to "." manually!
 	// use any desired options from charm's filepicker, e.g.
 	fp.AllowedTypes = []string{".mod", ".sum", ".go", ".txt", ".md"}
-	fp.CurrentDirectory, _ = os.UserHomeDir()
+	fp.LoopEntries = true // loop selection
 
 	m := model{filepicker: fp}
 	tm, _ := tea.NewProgram(m).Run()

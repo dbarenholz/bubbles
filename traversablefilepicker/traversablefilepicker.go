@@ -22,28 +22,27 @@ func nextID() int {
 }
 
 // New returns a new filepicker model with default styling and key bindings.
-func New() Model {
+func New(at string) Model {
+	absolutePath, err := filepath.Abs(at)
+	if err != nil {
+		panic(fmt.Sprintf("could not get absolute path of %s: %v", at, err))
+	}
 	return Model{
 		id:               nextID(),
-		CurrentDirectory: ".",
+		currentDirectory: absolutePath,
 		Cursor:           ">",
 		AllowedTypes:     []string{},
 		ShowPermissions:  true,
 		ShowSize:         true,
-		ShowHidden:       false,
+		ShowHidden:       false, // while I would like true, I will keep default charm behaviour for now
 		DirAllowed:       false,
 		FileAllowed:      true,
 		AutoHeight:       true,
+		LoopEntries:      false, // while I would like true, I will keep default charm behaviour for now
 		height:           0,
-		history:          newHistory("."), // uses current directory as parameter
-		// selected:         0,
-		// maxIdx:           0,
-		// minIdx:           0,
-		// selectedStack:    newStack(),
-		// minStack:         newStack(),
-		// maxStack:         newStack(),
-		KeyMap: DefaultKeyMap(),
-		Styles: DefaultStyles(),
+		history:          newHistory(absolutePath), // uses current directory as parameter
+		KeyMap:           DefaultKeyMap(),
+		Styles:           DefaultStyles(),
 	}
 }
 
@@ -73,13 +72,16 @@ type KeyMap struct {
 	Back     key.Binding
 	Open     key.Binding
 	Select   key.Binding
+
+	// NOTE: added a convenience keybind to go home
+	GoHome key.Binding
 }
 
 // DefaultKeyMap defines the default keybindings.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		GoToTop:  key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "first")),
-		GoToLast: key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "last")),
+		GoToTop:  key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "first")),
+		GoToLast: key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "last")),
 		Down:     key.NewBinding(key.WithKeys("j", "down", "ctrl+n"), key.WithHelp("j", "down")),
 		Up:       key.NewBinding(key.WithKeys("k", "up", "ctrl+p"), key.WithHelp("k", "up")),
 		PageUp:   key.NewBinding(key.WithKeys("K", "pgup"), key.WithHelp("pgup", "page up")),
@@ -87,6 +89,8 @@ func DefaultKeyMap() KeyMap {
 		Back:     key.NewBinding(key.WithKeys("h", "backspace", "left", "esc"), key.WithHelp("h", "back")),
 		Open:     key.NewBinding(key.WithKeys("l", "right", "enter"), key.WithHelp("l", "open")),
 		Select:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+
+		GoHome: key.NewBinding(key.WithKeys("~"), key.WithHelp("~", "go home")),
 	}
 }
 
@@ -141,20 +145,21 @@ type Model struct {
 	// Path is the path which the user has selected with the file picker.
 	Path string
 
-	// CurrentDirectory is the directory that the user is currently in.
-	CurrentDirectory string
+	// currentDirectory is the directory that the user is currently in.
+	currentDirectory string
 
 	// AllowedTypes specifies which file types the user may select.
 	// If empty the user may select any file.
 	AllowedTypes []string
 
 	KeyMap          KeyMap
-	files           []os.DirEntry
-	ShowPermissions bool
-	ShowSize        bool
-	ShowHidden      bool
-	DirAllowed      bool
-	FileAllowed     bool
+	entries         []os.DirEntry
+	ShowPermissions bool // whether to show file permissions; this does not affect whether files can be selected based on type
+	ShowSize        bool // whether to show file sizes; this does not affect whether files can be selected based on type
+	ShowHidden      bool // whether hidden files should be shown; this does not affect whether hidden files can be selected
+	DirAllowed      bool // whether directories can be selected; if false, only files can be selected
+	FileAllowed     bool // whether files can be selected; if false, only directories can be selected
+	LoopEntries     bool // whether moving up at the top of the list should loop to the bottom, and vice versa
 
 	FileSelected string
 
@@ -167,47 +172,41 @@ type Model struct {
 	Styles Styles
 }
 
-func (m *Model) getHistEntry() *historyEntry {
-	h, ok := m.history[m.CurrentDirectory]
+// Gets the history entry for the current directory, or creates one if it doesn't exist.
+func (m *Model) histEntry() *historyEntry {
+	h, ok := m.history[m.currentDirectory]
 	if !ok {
 		h = &historyEntry{selected: 0, minIdx: 0, maxIdx: m.Height() - 1}
-		m.history[m.CurrentDirectory] = h
+		m.history[m.currentDirectory] = h
 	}
 	return h
 }
 
-// type stack struct {
-// 	Push   func(int)
-// 	Pop    func() int
-// 	Length func() int
-// }
+// Gets current valid history entry
+func (m *Model) getHistEntry() *historyEntry {
+	// init or get
 
-// func newStack() stack {
-// 	slice := make([]int, 0)
-// 	return stack{
-// 		Push: func(i int) {
-// 			slice = append(slice, i)
-// 		},
-// 		Pop: func() int {
-// 			res := slice[len(slice)-1]
-// 			slice = slice[:len(slice)-1]
-// 			return res
-// 		},
-// 		Length: func() int {
-// 			return len(slice)
-// 		},
-// 	}
-// }
+	h := m.histEntry()
+	// validate based on current state
 
-// func (m *Model) pushView(selected, minimum, maximum int) {
-// 	m.selectedStack.Push(selected)
-// 	m.minStack.Push(minimum)
-// 	m.maxStack.Push(maximum)
-// }
+	// if there are no entries, then set to default
+	if len(m.entries) == 0 {
+		h.selected = 0
+		h.minIdx = 0
+		h.maxIdx = m.Height() - 1
+		return h
+	}
 
-// func (m *Model) popView() (int, int, int) {
-// 	return m.selectedStack.Pop(), m.minStack.Pop(), m.maxStack.Pop()
-// }
+	// there are entries, so make sure min, max, selected are all valid
+	// fixSelected()
+
+	h.selected = max(0, min(h.selected, len(m.entries)-1))
+	h.minIdx = max(0, min(h.minIdx, h.selected))
+	h.maxIdx = max(h.minIdx, min(h.maxIdx, h.selected+m.Height()-1, len(m.entries)-1))
+
+	// and done!
+	return h
+}
 
 func (m Model) readDir(path string, showHidden bool) tea.Cmd {
 	return func() tea.Msg {
@@ -256,7 +255,7 @@ func (m Model) Height() int {
 
 // Init initializes the file picker model.
 func (m Model) Init() tea.Cmd {
-	return m.readDir(m.CurrentDirectory, m.ShowHidden)
+	return m.readDir(m.currentDirectory, m.ShowHidden)
 }
 
 // Update handles user interactions within the file picker model.
@@ -270,14 +269,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.id != m.id {
 			break
 		}
-		m.files = msg.entries
+		m.entries = msg.entries
 		histEntry.maxIdx = max(histEntry.maxIdx, m.Height()-1)
 
 	case tea.WindowSizeMsg:
 		if m.AutoHeight {
+			// set the height on the model
 			m.SetHeight(msg.Height - marginBottom)
+			histEntry.maxIdx = m.Height() - 1
+			if histEntry.selected > histEntry.maxIdx {
+				histEntry.selected = histEntry.maxIdx
+			}
+			if histEntry.minIdx > histEntry.selected {
+				histEntry.minIdx = histEntry.selected
+			}
 		}
-		histEntry.maxIdx = m.Height() - 1
 
 	case tea.KeyPressMsg:
 		switch {
@@ -286,38 +292,54 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			histEntry.minIdx = 0
 			histEntry.maxIdx = m.Height() - 1
 		case key.Matches(msg, m.KeyMap.GoToLast):
-			histEntry.selected = len(m.files) - 1
-			histEntry.minIdx = len(m.files) - m.Height()
-			histEntry.maxIdx = len(m.files) - 1
+			histEntry.selected = len(m.entries) - 1
+			histEntry.minIdx = len(m.entries) - m.Height()
+			histEntry.maxIdx = len(m.entries) - 1
 		case key.Matches(msg, m.KeyMap.Down):
 			histEntry.selected++
-			if histEntry.selected >= len(m.files) {
-				histEntry.selected = len(m.files) - 1
+			// went out of bounds, but want to loop
+			if histEntry.selected >= len(m.entries) && m.LoopEntries {
+				histEntry.selected = 0
+				histEntry.minIdx = 0
+				histEntry.maxIdx = m.Height() - 1
 			}
+			// went out of bounds, but don't want to loop
+			if histEntry.selected >= len(m.entries) && !m.LoopEntries {
+				histEntry.selected = len(m.entries) - 1
+			}
+			// scroll window down if necessary
 			if histEntry.selected > histEntry.maxIdx {
 				histEntry.minIdx++
 				histEntry.maxIdx++
 			}
 		case key.Matches(msg, m.KeyMap.Up):
 			histEntry.selected--
-			if histEntry.selected < 0 {
+			// went out of bounds, but want to loop
+			if histEntry.selected < 0 && m.LoopEntries {
+				histEntry.selected = len(m.entries) - 1
+				histEntry.minIdx = len(m.entries) - m.Height()
+				histEntry.maxIdx = len(m.entries) - 1
+			}
+			// went out of bounds, don't want to loop
+			if histEntry.selected < 0 && !m.LoopEntries {
 				histEntry.selected = 0
 			}
+			// scroll window up if necessary
 			if histEntry.selected < histEntry.minIdx {
 				histEntry.minIdx--
 				histEntry.maxIdx--
 			}
 		case key.Matches(msg, m.KeyMap.PageDown):
 			histEntry.selected += m.Height()
-			if histEntry.selected >= len(m.files) {
-				histEntry.selected = len(m.files) - 1
+			if histEntry.selected >= len(m.entries) {
+				histEntry.selected = len(m.entries) - 1
 			}
 			histEntry.minIdx += m.Height()
 			histEntry.maxIdx += m.Height()
 
-			if histEntry.maxIdx >= len(m.files) {
-				histEntry.maxIdx = len(m.files) - 1
-				histEntry.minIdx = histEntry.maxIdx - m.Height()
+			if histEntry.maxIdx >= len(m.entries) {
+				histEntry.maxIdx = len(m.entries) - 1
+				histEntry.minIdx = histEntry.maxIdx - m.Height() + 1 // fix visual discrepancy between GoToLast and PageDowns
 			}
 		case key.Matches(msg, m.KeyMap.PageUp):
 			histEntry.selected -= m.Height()
@@ -334,38 +356,38 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// NOTE: modified back behaviour; back always goes up one level
 		case key.Matches(msg, m.KeyMap.Back):
 			// get parent directory
-			parentDir := filepath.Dir(m.CurrentDirectory)
+			parentDir := filepath.Dir(m.currentDirectory)
 			// we're at the root
-			if parentDir == m.CurrentDirectory {
+			if parentDir == m.currentDirectory {
 				break
 			}
 			// we want to go up; current state already save by mutability
 
 			// switch directories
-			m.CurrentDirectory = parentDir
+			m.currentDirectory = parentDir
 
 			// we don't need to keep track of history here, this is already done
 			// at top of the function by mutability of history map
 
 			// and read it
-			return m, m.readDir(m.CurrentDirectory, m.ShowHidden)
+			return m, m.readDir(m.currentDirectory, m.ShowHidden)
 
 		// NOTE: modified open implementation; behaviour is identical
 		case key.Matches(msg, m.KeyMap.Open):
-			if len(m.files) == 0 {
+			if len(m.entries) == 0 {
 				break
 			}
 
-			f := m.files[histEntry.selected]
-			info, err := f.Info()
+			entry := m.entries[histEntry.selected]
+			info, err := entry.Info()
 			if err != nil {
 				break
 			}
 			isSymlink := info.Mode()&os.ModeSymlink != 0
-			isDir := f.IsDir()
+			isDir := entry.IsDir()
 
 			if isSymlink {
-				symlinkPath, _ := filepath.EvalSymlinks(filepath.Join(m.CurrentDirectory, f.Name()))
+				symlinkPath, _ := filepath.EvalSymlinks(filepath.Join(m.currentDirectory, entry.Name()))
 				info, err := os.Stat(symlinkPath)
 				if err != nil {
 					break
@@ -378,7 +400,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if (!isDir && m.FileAllowed) || (isDir && m.DirAllowed) {
 				if key.Matches(msg, m.KeyMap.Select) {
 					// Select the current path as the selection
-					m.Path = filepath.Join(m.CurrentDirectory, f.Name())
+					m.Path = filepath.Join(m.currentDirectory, entry.Name())
 				}
 			}
 
@@ -387,12 +409,23 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			// save folder name as current directory
-			m.CurrentDirectory = filepath.Join(m.CurrentDirectory, f.Name())
+			m.currentDirectory = filepath.Join(m.currentDirectory, entry.Name())
 			// and read it -- no need for history management here
 			// this is done by mutability of history map at top of the function
-			return m, m.readDir(m.CurrentDirectory, m.ShowHidden)
+			return m, m.readDir(m.currentDirectory, m.ShowHidden)
+		case key.Matches(msg, m.KeyMap.GoHome):
+			// get the homedir
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				break
+			}
+			// set current directory to homedir
+			m.currentDirectory = homeDir
+			// and then read it -- no need for history management here
+			return m, m.readDir(m.currentDirectory, m.ShowHidden)
 		}
 	}
+
 	return m, nil
 }
 
@@ -400,32 +433,32 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) View() string {
 	histEntry := m.getHistEntry()
 
-	if len(m.files) == 0 {
+	if len(m.entries) == 0 {
 		return m.Styles.EmptyDirectory.Height(m.Height()).MaxHeight(m.Height()).String()
 	}
 	var s strings.Builder
 
-	for i, f := range m.files {
-		if i < histEntry.minIdx || i > histEntry.maxIdx {
+	for idx, entry := range m.entries {
+		if idx < histEntry.minIdx || idx > histEntry.maxIdx {
 			continue
 		}
 
 		var symlinkPath string
-		info, err := f.Info()
+		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
 		isSymlink := info.Mode()&os.ModeSymlink != 0
-		size := strings.Replace(humanize.Bytes(uint64(info.Size())), " ", "", 1) //nolint:gosec
-		name := f.Name()
+		size := strings.Replace(humanize.Bytes(uint64(info.Size())), " ", "", 1)
+		name := entry.Name()
 
 		if isSymlink {
-			symlinkPath, _ = filepath.EvalSymlinks(filepath.Join(m.CurrentDirectory, name))
+			symlinkPath, _ = filepath.EvalSymlinks(filepath.Join(m.currentDirectory, name))
 		}
 
-		disabled := !m.canSelect(name) && !f.IsDir()
+		disabled := !m.canSelect(name) && !entry.IsDir()
 
-		if histEntry.selected == i {
+		if histEntry.selected == idx {
 			selected := ""
 			if m.ShowPermissions {
 				selected += " " + info.Mode().String()
@@ -447,7 +480,7 @@ func (m Model) View() string {
 		}
 
 		style := m.Styles.File
-		if f.IsDir() {
+		if entry.IsDir() {
 			style = m.Styles.Directory
 		} else if isSymlink {
 			style = m.Styles.Symlink
@@ -470,7 +503,7 @@ func (m Model) View() string {
 		s.WriteRune('\n')
 	}
 
-	for i := lipgloss.Height(s.String()); i <= m.Height(); i++ {
+	for i := lipgloss.Height(s.String()); i < m.Height(); i++ {
 		s.WriteRune('\n')
 	}
 
@@ -500,46 +533,38 @@ func (m Model) DidSelectDisabledFile(msg tea.Msg) (bool, string) {
 func (m Model) didSelectFile(msg tea.Msg) (bool, string) {
 	histEntry := m.getHistEntry()
 
-	if len(m.files) == 0 {
+	// shortcut on no entries
+	if len(m.entries) == 0 {
 		return false, ""
 	}
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		// If the msg does not match the Select keymap then this could not have been a selection.
-		if !key.Matches(msg, m.KeyMap.Select) {
-			return false, ""
-		}
 
-		// The key press was a selection, let's confirm whether the current file could
-		// be selected or used for navigating deeper into the stack.
-		f := m.files[histEntry.selected]
-		info, err := f.Info()
+	// selection can only happen on keypressmessages, when key matches Select
+	keyMsg, ok := msg.(tea.KeyPressMsg)
+	if !ok || !key.Matches(keyMsg, m.KeyMap.Select) {
+		return false, ""
+	}
+
+	entry := m.entries[histEntry.selected]
+	info, err := entry.Info()
+	if err != nil {
+		return false, ""
+	}
+	isSymlink := info.Mode()&os.ModeSymlink != 0
+	isDir := entry.IsDir()
+
+	if isSymlink {
+		symlinkPath, _ := filepath.EvalSymlinks(filepath.Join(m.currentDirectory, entry.Name()))
+		info, err := os.Stat(symlinkPath)
 		if err != nil {
 			return false, ""
 		}
-		isSymlink := info.Mode()&os.ModeSymlink != 0
-		isDir := f.IsDir()
-
-		if isSymlink {
-			symlinkPath, _ := filepath.EvalSymlinks(filepath.Join(m.CurrentDirectory, f.Name()))
-			info, err := os.Stat(symlinkPath)
-			if err != nil {
-				break
-			}
-			if info.IsDir() {
-				isDir = true
-			}
-		}
-
-		if (!isDir && m.FileAllowed) || (isDir && m.DirAllowed) && m.Path != "" {
-			return true, m.Path
-		}
-
-		// If the msg was not a KeyPressMsg, then the file could not have been selected this iteration.
-		// Only a KeyPressMsg can select a file.
-	default:
-		return false, ""
+		isDir = isDir || info.IsDir()
 	}
+
+	if (!isDir && m.FileAllowed) || (isDir && m.DirAllowed) && m.Path != "" {
+		return true, m.Path
+	}
+
 	return false, ""
 }
 
@@ -560,8 +585,8 @@ func (m Model) canSelect(file string) bool {
 func (m Model) HighlightedPath() string {
 	histEntry := m.getHistEntry()
 
-	if len(m.files) == 0 || histEntry.selected < 0 || histEntry.selected >= len(m.files) {
+	if len(m.entries) == 0 || histEntry.selected < 0 || histEntry.selected >= len(m.entries) {
 		return ""
 	}
-	return filepath.Join(m.CurrentDirectory, m.files[histEntry.selected].Name())
+	return filepath.Join(m.currentDirectory, m.entries[histEntry.selected].Name())
 }
