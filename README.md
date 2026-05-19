@@ -23,6 +23,15 @@ This to illustrate how one can embed the filepicker in a larger UI and still hav
 
 See the [example](./examples/SearchableFilepicker/README.md) for details and a pretty gif.
 
+## Button
+
+The **Button** bubble renders stylable and composable text "buttons".
+A simple style is to use `[ text ]` as button, call it "bracket style".
+Buttons have states for enabled, disabled, and being focused/selected.
+Buttons do indeed behave like buttons, and can be pressed by hitting the `enter` when focused, which fires a `ButtonPressed` message that can be handled by parent UIs.
+
+See the [example](./examples/Button/README.md) for details and a pretty gif.
+
 ## License
 
 This repository and its bubbles are [MIT](./LICENSE.md) licensed.
