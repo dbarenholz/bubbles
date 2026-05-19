@@ -32,6 +32,16 @@ Buttons do indeed behave like buttons, and can be pressed by hitting the `enter`
 
 See the [example](./examples/Button/README.md) for details and a pretty gif.
 
+## ButtonGroup
+
+The **ButtonGroup** bubble is a container for buttons, showcasing their composability.
+You either create a horizontal or vertical group, or you specify the number of rows and columns for a grid layout.
+Spacing is customizable, but has sensible (insofar possible) defaults.
+Focus between buttons in a group is done using arrow keys, or using `tab` and `shift+tab` if you so prefer.
+The `ButtonPressed` message from buttons in the group are given an extra index for a group, so it's easier to identify which button was pressed.
+
+See the [example](./examples/ButtonGroup/README.md) for details and a pretty gif.
+
 ## License
 
 This repository and its bubbles are [MIT](./LICENSE.md) licensed.
