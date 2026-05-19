@@ -1,6 +1,6 @@
-// A filefinder is a bubble that allows you to find files.
-// Consider it a filepicker, but with a search input that filters the shown entries.
-package filefinder
+// Builds on the traversablefilepicker to add a search input that filters the shown entries.
+// It searches through the entries shown in the picker, hence the name.
+package searchablefilepicker
 
 import (
 	"os"
@@ -16,6 +16,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+//                    .___     .__
+//   _____   ____   __| _/____ |  |
+//  /     \ /  _ \ / __ |/ __ \|  |
+// |  Y Y  (  <_> ) /_/ \  ___/|  |__
+// |__|_|  /\____/\____ |\___  >____/
+//       \/            \/    \/
+
+// KeyMap defines key bindings for each user action.
 type KeyMap struct {
 	// FocusSearch is the key binding to focus the search input
 	FocusSearch key.Binding
@@ -25,6 +33,7 @@ type KeyMap struct {
 	DiscardSearch key.Binding
 }
 
+// DefaultKeyMap returns the default key bindings.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		// Open the search by pressing "/"
@@ -45,6 +54,7 @@ const (
 	FocusOnSearch
 )
 
+// Model represents a searchable file picker, which wraps around a TextInput and our TraversableFilePicker
 type Model struct {
 	TextInput  textinput.Model
 	FilePicker tfp.Model
@@ -52,6 +62,7 @@ type Model struct {
 	KeyMap     KeyMap
 }
 
+// New returns a new searchable file picker model with default styling and key bindings.
 func New(at string) Model {
 	// grab the default keys
 	keys := DefaultKeyMap()
@@ -96,34 +107,64 @@ func New(at string) Model {
 	}
 }
 
+// Init initializes the contained file picker.
 func (m *Model) Init() tea.Cmd {
 	return m.FilePicker.Init()
 }
 
-func filterFor(query string) func(entry os.DirEntry) bool {
-	return func(entry os.DirEntry) bool {
-		// if the query is empty, show all entries
-		if query == "" {
-			return true
-		}
-		// otherwise, only show entries that contain the query (case-insensitive)
-		return strings.Contains(strings.ToLower(entry.Name()), query)
+// Update handles messages for the file picker and search input, delegating to appropriate functions.
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if m.Focus == FocusOnSearch {
+		return m.updateForSearch(msg)
 	}
+	if m.Focus == FocusOnFiles {
+		return m.updateForFiles(msg)
+	}
+
+	return m, nil
 }
 
-func highlightedSelectionIsDir(fp *tfp.Model) bool {
-	highlightedPath := fp.HighlightedPath()
-	if highlightedPath == "" {
-		return false
+// View renders the file picker and search input with styling
+func (m *Model) View() string {
+	searchBoxStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Margin(0, 1).Width(59)
+
+	// Style for filepicker with left margin to align with search box
+	filePickerStyle := lipgloss.NewStyle().MarginLeft(2)
+
+	// Get the number of entries to check for warnings
+	numEntries := m.FilePicker.NumEntries()
+	focusedColor := m.FilePicker.Styles.Selected.GetForeground()
+	dirColor := m.FilePicker.Styles.Directory.GetForeground()
+	dimmedColor := m.FilePicker.Styles.DisabledFile.GetForeground()
+
+	// Apply conditional styling to the search input
+	searchStyle := searchBoxStyle
+	if m.Focus == FocusOnSearch {
+		searchStyle = searchStyle.BorderForeground(focusedColor)
+	} else {
+		searchStyle = searchStyle.BorderForeground(dimmedColor).Foreground(dimmedColor)
 	}
 
-	info, err := os.Stat(highlightedPath)
-	if err != nil {
-		return false
+	// If no entries, use warning colors
+	if numEntries == 0 {
+		searchStyle = searchStyle.BorderForeground(lipgloss.Color("196"))
 	}
 
-	return info.IsDir()
+	searchInput := searchStyle.Render(m.TextInput.View())
+
+	pathStyle := lipgloss.NewStyle().MarginLeft(2).Foreground(dirColor)
+	currentPath := pathStyle.Render(m.FilePicker.CurrentDirectory())
+	filePickerView := filePickerStyle.Render(m.FilePicker.View())
+
+	return searchInput + "\n" + currentPath + "\n" + filePickerView
 }
+
+// .__                       .___.__
+// |  |__ _____    ____    __| _/|  |   ___________  ______
+// |  |  \\__  \  /    \  / __ | |  | _/ __ \_  __ \/  ___/
+// |   Y  \/ __ \|   |  \/ /_/ | |  |_\  ___/|  | \/\___ \
+// |___|  (____  /___|  /\____ | |____/\___  >__|  /____  >
+//      \/     \/     \/      \/           \/           \/
 
 // All the things we need to do when files is focused (initial state)
 func (m Model) updateForFiles(msg tea.Msg) (Model, tea.Cmd) {
@@ -182,7 +223,6 @@ func (m Model) updateForSearch(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// multiple entries, so just switch focus back to files
-
 		return m, nil
 	}
 
@@ -207,48 +247,34 @@ func (m Model) updateForSearch(msg tea.Msg) (Model, tea.Cmd) {
 	return m, tea.Batch(cmd, fpCmd)
 }
 
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	if m.Focus == FocusOnSearch {
-		return m.updateForSearch(msg)
-	}
-	if m.Focus == FocusOnFiles {
-		return m.updateForFiles(msg)
-	}
+//              .__               __
+// _____________|__|__  _______ _/  |_  ____
+// \____ \_  __ \  \  \/ /\__  \\   __\/ __ \
+// |  |_> >  | \/  |\   /  / __ \|  | \  ___/
+// |   __/|__|  |__| \_/  (____  /__|  \___  >
+// |__|                        \/          \/
 
-	return m, nil
+func filterFor(query string) func(entry os.DirEntry) bool {
+	return func(entry os.DirEntry) bool {
+		// if the query is empty, show all entries
+		if query == "" {
+			return true
+		}
+		// otherwise, only show entries that contain the query (case-insensitive)
+		return strings.Contains(strings.ToLower(entry.Name()), query)
+	}
 }
 
-// View renders the file picker and search input with styling
-func (m *Model) View() string {
-	searchBoxStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Margin(0, 1).Width(59)
-
-	// Style for filepicker with left margin to align with search box
-	filePickerStyle := lipgloss.NewStyle().MarginLeft(2)
-
-	// Get the number of entries to check for warnings
-	numEntries := m.FilePicker.NumEntries()
-	focusedColor := m.FilePicker.Styles.Selected.GetForeground()
-	dirColor := m.FilePicker.Styles.Directory.GetForeground()
-	dimmedColor := m.FilePicker.Styles.DisabledFile.GetForeground()
-
-	// Apply conditional styling to the search input
-	searchStyle := searchBoxStyle
-	if m.Focus == FocusOnSearch {
-		searchStyle = searchStyle.BorderForeground(focusedColor)
-	} else {
-		searchStyle = searchStyle.BorderForeground(dimmedColor).Foreground(dimmedColor)
+func highlightedSelectionIsDir(fp *tfp.Model) bool {
+	highlightedPath := fp.HighlightedPath()
+	if highlightedPath == "" {
+		return false
 	}
 
-	// If no entries, use warning colors
-	if numEntries == 0 {
-		searchStyle = searchStyle.BorderForeground(lipgloss.Color("196"))
+	info, err := os.Stat(highlightedPath)
+	if err != nil {
+		return false
 	}
 
-	searchInput := searchStyle.Render(m.TextInput.View())
-
-	pathStyle := lipgloss.NewStyle().MarginLeft(2).Foreground(dirColor)
-	currentPath := pathStyle.Render(m.FilePicker.CurrentDirectory())
-	filePickerView := filePickerStyle.Render(m.FilePicker.View())
-
-	return searchInput + "\n" + currentPath + "\n" + filePickerView
+	return info.IsDir()
 }
