@@ -63,21 +63,11 @@ type model struct {
 	quitting     bool
 }
 
-func newModel() (model, error) {
-	h, err := makeHorizontal()
-	if err != nil {
-		return model{}, err
-	}
-	v, err := makeVertical()
-	if err != nil {
-		return model{}, err
-	}
-	g, err := makeGrid()
-	if err != nil {
-		return model{}, err
-	}
+func newModel() model {
+	h := makeHorizontal()
+	v := makeVertical()
+	g := makeGrid()
 
-	h.Focus()
 	v.Blur()
 	g.Blur()
 
@@ -91,7 +81,7 @@ func newModel() (model, error) {
 		focussedDemo: 0,
 		keys:         defaultKeyMap(),
 		help:         hlp,
-	}, nil
+	}
 }
 
 func (m model) Init() tea.Cmd {
@@ -197,15 +187,16 @@ func (m model) View() tea.View {
 	return v
 }
 
-func makeHorizontal() (buttongroup.Model, error) {
+func makeHorizontal() buttongroup.Model {
 	yes := button.New("Yes")
 	disabled := button.New("Disabled")
-	disabled.SetDisabled(true)
 	maybe := button.New("Maybe")
-	return buttongroup.HorizontalGroup(yes, disabled, maybe)
+	group := buttongroup.HorizontalGroup(yes, disabled, maybe)
+	group.SetDisabled(disabled.ID(), true)
+	return group
 }
 
-func makeVertical() (buttongroup.Model, error) {
+func makeVertical() buttongroup.Model {
 	one := button.New("One")
 	one.SetStyle(button.Parens)
 	two := button.New("Two")
@@ -214,12 +205,12 @@ func makeVertical() (buttongroup.Model, error) {
 	three.SetStyle(button.Parens)
 	four := button.New("Four")
 	four.SetStyle(button.Parens)
-	four.SetDisabled(true)
-
-	return buttongroup.VerticalGroup(one, two, three, four)
+	group := buttongroup.VerticalGroup(one, two, three, four)
+	group.SetDisabled(four.ID(), true)
+	return group
 }
 
-func makeGrid() (buttongroup.Model, error) {
+func makeGrid() buttongroup.Model {
 	btnA := button.New("A")
 	btnA.SetStyle(button.BoxDrawing)
 	btnB := button.New("B")
@@ -230,23 +221,18 @@ func makeGrid() (buttongroup.Model, error) {
 	btnD.SetStyle(button.BoxDrawing)
 	btnE := button.New("E")
 	btnE.SetStyle(button.BoxDrawing)
-	btnE.SetDisabled(true)
 	btnF := button.New("F")
 	btnF.SetStyle(button.BoxDrawing)
 	btnG := button.New("G")
 	btnG.SetStyle(button.BoxDrawing)
 
-	return buttongroup.ButtonGrid(3, 3, btnA, btnB, btnC, btnD, btnE, btnF, btnG)
+	group := buttongroup.ButtonGrid(3, 3, btnA, btnB, btnC, btnD, btnE, btnF, btnG)
+	group.SetDisabled(btnE.ID(), true)
+	return group
 }
 
 func main() {
-	m, err := newModel()
-	if err != nil {
-		fmt.Printf("Could not create model :(\n%v\n", err)
-		os.Exit(1)
-	}
-
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	if _, err := tea.NewProgram(newModel()).Run(); err != nil {
 		fmt.Printf("Could not start program :(\n%v\n", err)
 		os.Exit(1)
 	}

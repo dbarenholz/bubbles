@@ -3,7 +3,6 @@
 package buttongroup
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -18,8 +17,6 @@ import (
 // |  Y Y  (  <_> ) /_/ \  ___/|  |__
 // |__|_|  /\____/\____ |\___  >____/
 //       \/            \/    \/
-
-const errNoButtons = "buttongroup: at least one button is required"
 
 // GroupLayout represents the layout of buttons in a group.
 type GroupLayout int
@@ -82,10 +79,38 @@ type Model struct {
 	KeyMap      KeyMap
 }
 
+func (m *Model) buttonIndexByID(id int) (int, bool) {
+	for idx := range m.buttons {
+		if m.buttons[idx].ID() == id {
+			return idx, true
+		}
+	}
+	return -1, false
+}
+
+func (m *Model) setFocusedIndex(idx int) {
+	if idx < 0 || idx >= len(m.buttons) {
+		return
+	}
+	if m.focusIdx >= 0 && m.focusIdx < len(m.buttons) && m.focusIdx != idx {
+		m.buttons[m.focusIdx].Blur()
+	}
+	m.focusIdx = idx
+	if m.focused {
+		m.buttons[m.focusIdx].Focus()
+	}
+}
+
+func (m *Model) blurFocusedButton() {
+	if m.focusIdx >= 0 && m.focusIdx < len(m.buttons) {
+		m.buttons[m.focusIdx].Blur()
+	}
+}
+
 // Creates a horizontal button group with the given buttons.
-func HorizontalGroup(buttons ...button.Model) (Model, error) {
+func HorizontalGroup(buttons ...button.Model) Model {
 	if len(buttons) == 0 {
-		return Model{}, fmt.Errorf(errNoButtons)
+		return Model{}
 	}
 	// copy so callers can't screw up our buttons
 	btns := make([]button.Model, len(buttons))
@@ -99,13 +124,13 @@ func HorizontalGroup(buttons ...button.Model) (Model, error) {
 		KeyMap:   DefaultKeyMap(),
 	}
 	m.buttons[0].Focus()
-	return m, nil
+	return m
 }
 
 // Creates a vertical button group with the given buttons.
-func VerticalGroup(buttons ...button.Model) (Model, error) {
+func VerticalGroup(buttons ...button.Model) Model {
 	if len(buttons) == 0 {
-		return Model{}, fmt.Errorf(errNoButtons)
+		return Model{}
 	}
 	// copy so callers can't screw up our buttons
 	btns := make([]button.Model, len(buttons))
@@ -119,21 +144,21 @@ func VerticalGroup(buttons ...button.Model) (Model, error) {
 		KeyMap:   DefaultKeyMap(),
 	}
 	m.buttons[0].Focus()
-	return m, nil
+	return m
 }
 
 // Creates a grid button group with the given buttons and column count.
 // Fills buttons left to right, top to bottom.
-// Returns an error if len(buttons) exceeds rows*cols.
-func ButtonGrid(rows, cols int, buttons ...button.Model) (Model, error) {
+// Returns an empty model if the inputs are invalid.
+func ButtonGrid(rows, cols int, buttons ...button.Model) Model {
 	if len(buttons) == 0 {
-		return Model{}, fmt.Errorf(errNoButtons)
+		return Model{}
 	}
 	if rows <= 0 || cols <= 0 {
-		return Model{}, fmt.Errorf("buttongroup: row and column counts must be positive")
+		return Model{}
 	}
 	if len(buttons) > rows*cols {
-		return Model{}, fmt.Errorf("buttongroup: %d buttons exceed grid capacity of %d (%dx%d)", len(buttons), rows*cols, rows, cols)
+		return Model{}
 	}
 	// copy so callers can't screw up our buttons
 	btns := make([]button.Model, len(buttons))
@@ -149,7 +174,7 @@ func ButtonGrid(rows, cols int, buttons ...button.Model) (Model, error) {
 		KeyMap:      DefaultKeyMap(),
 	}
 	m.buttons[0].Focus()
-	return m, nil
+	return m
 }
 
 // Init initializes the button group (no-op).
@@ -165,6 +190,9 @@ func (m Model) Init() tea.Cmd {
 //   - Vertical: Up/Down move without wrapping; Left/Right do nothing
 //   - Grid: arrow keys move by row/column without wrapping at edges
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if !m.focused {
+		return m, nil
+	}
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		switch {
 		case key.Matches(keyMsg, m.KeyMap.FocusNext):
@@ -454,19 +482,46 @@ func (m Model) renderGrid(rowSpacing int) string {
 // |   __/|____/|___  /____/__|\___  > (____  /   __/|__|
 // |__|             \/             \/       \/|__|
 
-// Focus on the first button in the group.
-func (m *Model) Focus() {
-	m.focused = true
-	if len(m.buttons) > 0 {
+// Focus restores the group focus, or focuses a specific button when an id is provided.
+func (m *Model) Focus(ids ...int) {
+	if len(m.buttons) == 0 {
+		m.focused = true
+		return
+	}
+	if len(ids) == 0 {
+		m.focused = true
 		m.buttons[m.focusIdx].Focus()
+		return
+	}
+	if idx, ok := m.buttonIndexByID(ids[0]); ok {
+		m.focused = true
+		m.setFocusedIndex(idx)
 	}
 }
 
-// Blur focus from the group and all its buttons.
-func (m *Model) Blur() {
-	m.focused = false
-	if len(m.buttons) > 0 {
-		m.buttons[m.focusIdx].Blur()
+// Blur removes group focus, or blurs a specific button when an id is provided.
+func (m *Model) Blur(ids ...int) {
+	if len(m.buttons) == 0 {
+		m.focused = false
+		return
+	}
+	if len(ids) == 0 {
+		m.blurFocusedButton()
+		m.focused = false
+		return
+	}
+	if idx, ok := m.buttonIndexByID(ids[0]); ok {
+		m.buttons[idx].Blur()
+		if idx == m.focusIdx && m.focused {
+			m.focusIdx = idx
+		}
+	}
+}
+
+// SetDisabled disables or enables a button in the group by id.
+func (m *Model) SetDisabled(id int, disable bool) {
+	if idx, ok := m.buttonIndexByID(id); ok {
+		m.buttons[idx].SetDisabled(disable)
 	}
 }
 
@@ -551,6 +606,9 @@ func (m *Model) updateFocused(msg tea.Msg) tea.Cmd {
 		focusedIndex := m.focusIdx
 		b, cmd := m.buttons[focusedIndex].Update(msg)
 		m.buttons[focusedIndex] = b
+		if !m.focused {
+			return nil
+		}
 		focusedButton := m.buttons[focusedIndex]
 		focusedButtonID := focusedButton.ID()
 		if cmd == nil {
