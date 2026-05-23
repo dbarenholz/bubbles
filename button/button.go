@@ -32,15 +32,6 @@ const (
 	BoxDrawing
 )
 
-// ButtonState represents the button's current state.
-type ButtonState int
-
-const (
-	Enabled ButtonState = iota
-	Disabled
-	Focused
-)
-
 // KeyMap defines the keybindings for the button.
 type KeyMap struct {
 	ButtonPress key.Binding
@@ -75,10 +66,11 @@ func DefaultStyles() Styles {
 // Model represents a button.
 type Model struct {
 	// private fields
-	id    int
-	label string
-	style ButtonType
-	state ButtonState
+	id      int
+	label   string
+	style   ButtonType
+	enabled bool
+	focused bool
 
 	// The keybindings used by the button.
 	KeyMap KeyMap
@@ -92,12 +84,13 @@ func New(label string) Model {
 	styles := DefaultStyles()
 
 	return Model{
-		id:     nextID(),
-		label:  label,
-		style:  Brackets,
-		state:  Enabled,
-		KeyMap: keys,
-		Styles: styles,
+		id:      nextID(),
+		label:   label,
+		style:   Brackets,
+		enabled: true,
+		focused: false,
+		KeyMap:  keys,
+		Styles:  styles,
 	}
 }
 
@@ -130,10 +123,11 @@ func (m Model) View() string {
 
 func (m Model) handlePress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if key.Matches(msg, m.KeyMap.ButtonPress) {
-		if m.state == Disabled {
+		if !m.enabled {
+			// NOTE: should not really happen, but just in case
 			return m, func() tea.Msg { return disabledPressMsg{ID: m.id} }
 		}
-		if m.state == Focused {
+		if m.focused {
 			return m, func() tea.Msg { return pressMsg{ID: m.id} }
 		}
 	}
@@ -149,14 +143,18 @@ func (m Model) handlePress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 //              \/     \/      \/    \/              \//_____/
 
 func (m Model) styleForState() lipgloss.Style {
-	switch m.state {
-	case Disabled:
+	// disabled; we don't care about focus; shouldn't be focusable
+	if !m.enabled {
 		return m.Styles.Disabled
-	case Focused:
-		return m.Styles.Focused
-	default:
+	}
+	// enabled
+
+	// enabled, not focused
+	if !m.focused {
 		return m.Styles.Enabled
 	}
+
+	return m.Styles.Focused
 }
 
 func (m Model) renderedLabel() string {
@@ -212,31 +210,22 @@ func (m Model) Style() ButtonType {
 
 // Focus marks the button as focused.
 func (m *Model) Focus() {
-	if m.state != Disabled {
-		m.state = Focused
-	}
+	m.focused = true
 }
 
 // Blur marks the button as unfocused.
 func (m *Model) Blur() {
-	if m.state != Disabled {
-		m.state = Enabled
-	}
+	m.focused = false
 }
 
-// State returns the button's state.
-func (m Model) State() ButtonState {
-	return m.state
+// State returns the button's state as two booleans: (enabled, focused)
+func (m Model) State() (bool, bool) {
+	return m.enabled, m.focused
 }
 
 // SetDisabled enables or disables the button.
 func (m *Model) SetDisabled(disable bool) {
-	if disable {
-		m.state = Disabled
-	} else {
-		m.state = Enabled
-		m.Focus()
-	}
+	m.enabled = !disable
 }
 
 // DidPress returns wheter a user has pressed the button (on this msg).

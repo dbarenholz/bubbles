@@ -249,7 +249,8 @@ func (m Model) View() string {
 
 // isDisabled returns true if the button at idx is disabled.
 func (m *Model) isDisabled(idx int) bool {
-	return m.buttons[idx].State() == button.Disabled
+	enabled, _ := m.buttons[idx].State()
+	return !enabled
 }
 
 // focusNext moves focus to the next non-disabled button, wrapping around.

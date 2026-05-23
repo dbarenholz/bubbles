@@ -14,9 +14,17 @@ import (
 )
 
 type keymap struct {
-	Quit     key.Binding
+	Quit key.Binding
+
 	NextDemo key.Binding
 	PrevDemo key.Binding
+
+	Tab      key.Binding
+	ShiftTab key.Binding
+	Left     key.Binding
+	Right    key.Binding
+	Up       key.Binding
+	Down     key.Binding
 }
 
 func defaultKeyMap() keymap {
@@ -33,15 +41,41 @@ func defaultKeyMap() keymap {
 			key.WithKeys("{", "p"),
 			key.WithHelp("p/{", "previous demo"),
 		),
+		Tab: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "next button"),
+		),
+		ShiftTab: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "previous button"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left"),
+			key.WithHelp("left", "left button"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right"),
+			key.WithHelp("right", "right button"),
+		),
+		Up: key.NewBinding(
+			key.WithKeys("up"),
+			key.WithHelp("up", "top button"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down"),
+			key.WithHelp("down", "down button"),
+		),
 	}
 }
 
-func (k keymap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Quit, k.NextDemo, k.PrevDemo}
-}
-
+// unused
+func (k keymap) ShortHelp() []key.Binding { return []key.Binding{} }
 func (k keymap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Quit, k.NextDemo, k.PrevDemo}}
+	return [][]key.Binding{
+		{k.Quit},
+		{k.NextDemo, k.PrevDemo},
+		{k.Tab, k.ShiftTab, k.Left, k.Right, k.Up, k.Down},
+	}
 }
 
 type demo int
@@ -119,11 +153,11 @@ func (m *model) applyDemoFocus() {
 	m.grid.Blur()
 
 	switch m.focussedDemo {
-	case 0:
+	case HORIZONTAL_DEMO:
 		m.horizontal.Focus()
-	case 1:
+	case VERTICAL_DEMO:
 		m.vertical.Focus()
-	case 2:
+	case GRID_DEMO:
 		m.grid.Focus()
 	}
 }

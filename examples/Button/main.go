@@ -18,15 +18,14 @@ type keymap struct {
 	ToParen     key.Binding
 	ToBox       key.Binding
 	ToggleState key.Binding
+	Press       key.Binding
 }
 
-func (k keymap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Quit, k.ToBracket, k.ToParen, k.ToBox, k.ToggleState}
-}
-
+// unused
+func (k keymap) ShortHelp() []key.Binding { return []key.Binding{} }
 func (k keymap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Quit, k.ToggleState},
+		{k.Quit, k.ToggleState, k.Press},
 		{k.ToBracket, k.ToParen, k.ToBox},
 	}
 }
@@ -52,6 +51,10 @@ func defaultKeyMap() keymap {
 		ToggleState: key.NewBinding(
 			key.WithKeys("d"),
 			key.WithHelp("d", "toggle disabled"),
+		),
+		Press: key.NewBinding(
+			key.WithKeys("space", "enter"),
+			key.WithHelp("enter/space", "press"),
 		),
 	}
 }
@@ -103,11 +106,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ToBox):
 			m.btn.SetStyle(button.BoxDrawing)
 		case key.Matches(msg, m.keys.ToggleState):
-			if m.btn.State() == button.Disabled {
-				m.btn.SetDisabled(false)
-			} else {
-				m.btn.SetDisabled(true)
-			}
+			enabled, _ := m.btn.State()
+			m.btn.SetDisabled(enabled)
 		}
 
 	case clearMsg:
